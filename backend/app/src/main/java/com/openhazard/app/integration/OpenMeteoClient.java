@@ -38,7 +38,7 @@ public class OpenMeteoClient {
         } catch (Exception ex) {
             log.error("Failed to fetch weather data from Open-Meteo for lat: {}, lon: {}. Cause: {}", 
                     latitude, longitude, ex.getMessage());
-            // Graceful degraded fallback: returns empty Optional without crashing ingestion pipeline
+            // returns empty Optional without crashing ingestion pipeline
             return Optional.empty();
         }
     }
