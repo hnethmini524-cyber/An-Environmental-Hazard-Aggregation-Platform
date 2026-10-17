@@ -41,18 +41,25 @@ public class EnvironmentalService {
     @Cacheable(value = "locations-overview")
     public List<LocationOverviewDTO> getAllLocationsOverview() {
         return locationRepository.findByIsActiveTrue().stream().map(location -> {
-            Optional<EnvironmentalRecord> latest = recordRepository.findTopByLocationIdOrderByRecordedAtDesc(location.getId());
+            Optional<EnvironmentalRecord> latestOpt = recordRepository.findTopByLocationIdOrderByRecordedAtDesc(location.getId());
+            
+            RiskLevel overall = latestOpt.map(r -> r.getOverallRisk()).orElse(RiskLevel.LOW);
+            RiskLevel heat = latestOpt.map(r -> r.getHeatRisk()).orElse(RiskLevel.LOW);
+            RiskLevel air = latestOpt.map(r -> r.getAirQualityRisk()).orElse(RiskLevel.LOW);
+            RiskLevel flood = latestOpt.map(r -> r.getFloodRisk()).orElse(RiskLevel.LOW);
+            Instant updatedAt = latestOpt.map(r -> r.getRecordedAt()).orElse(Instant.now());
+
             return LocationOverviewDTO.builder()
                     .id(location.getId())
                     .name(location.getName())
                     .district(location.getDistrict())
                     .latitude(location.getLatitude())
                     .longitude(location.getLongitude())
-                    .overallRisk(latest.map(EnvironmentalRecord::getOverallRisk).orElse(RiskLevel.LOW))
-                    .heatRisk(latest.map(EnvironmentalRecord::getHeatRisk).orElse(RiskLevel.LOW))
-                    .airQualityRisk(latest.map(EnvironmentalRecord::getAirQualityRisk).orElse(RiskLevel.LOW))
-                    .floodRisk(latest.map(EnvironmentalRecord::getFloodRisk).orElse(RiskLevel.LOW))
-                    .updatedAt(latest.map(EnvironmentalRecord::getRecordedAt).orElse(Instant.now()))
+                    .overallRisk(overall)
+                    .heatRisk(heat)
+                    .airQualityRisk(air)
+                    .floodRisk(flood)
+                    .updatedAt(updatedAt)
                     .build();
         }).toList();
     }
@@ -83,9 +90,9 @@ public class EnvironmentalService {
     public EnvironmentalRecord fetchAndIngestLocationData(Location location) {
         log.info("Ingesting environmental data for location: {}", location.getName());
 
-        var rawMeteo = openMeteoClient.fetchCurrentWeather(location.getLatitude(), location.getLongitude());
+        Optional<OpenMeteoResponseDTO> rawMeteo = openMeteoClient.fetchCurrentWeather(location.getLatitude(), location.getLongitude());
         NormalizedEnvironmentData normalized = rawMeteo
-                .map(normalizer::normalize)
+                .map(raw -> normalizer.normalize(raw))
                 .orElseGet(() -> NormalizedEnvironmentData.builder().timestamp(Instant.now()).build());
 
         RiskAssessmentResult riskResult = riskEngine.evaluate(normalized);
@@ -106,7 +113,6 @@ public class EnvironmentalService {
 
         recordRepository.save(record);
 
-        // Alert Trigger check
         if (riskResult.getOverallRisk() == RiskLevel.HIGH || riskResult.getOverallRisk() == RiskLevel.CRITICAL) {
             triggerAlert(location, HazardType.OVERALL, riskResult.getOverallRisk(), 
                     "Elevated risk condition detected in " + location.getName());

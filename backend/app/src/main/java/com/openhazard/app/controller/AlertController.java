@@ -1,6 +1,7 @@
 package com.openhazard.app.controller;
 
 import com.openhazard.app.dto.AlertDTO;
+import com.openhazard.app.entities.Alert;
 import com.openhazard.app.repository.AlertRepository;
 import com.openhazard.app.service.SseAlertService;
 import lombok.RequiredArgsConstructor;
@@ -26,7 +27,9 @@ public class AlertController {
 
     @GetMapping
     public ResponseEntity<List<AlertDTO>> getRecentAlerts() {
-        List<AlertDTO> alerts = alertRepository.findTop50ByOrderByCreatedAtDesc().stream()
+        List<Alert> recentAlerts = alertRepository.findTop50ByOrderByCreatedAtDesc();
+        
+        List<AlertDTO> alerts = recentAlerts.stream()
                 .map(a -> AlertDTO.builder()
                         .id(a.getId())
                         .locationName(a.getLocation().getName())
