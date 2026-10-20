@@ -1,15 +1,24 @@
-import { useState } from 'react'
-import './App.css'
+import React from 'react';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { Layout } from './components/Layout';
+import { Home } from './pages/Home';
+import { MapView } from './pages/MapView';
+import { LocationDetails } from './pages/LocationDetails';
+import { Alerts } from './pages/Alerts';
 
-function App() {
-  const [count, setCount] = useState(0)
-
+export const App: React.FC = () => {
   return (
-    <>
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
-}
+    <BrowserRouter>
+      <Layout>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/map" element={<MapView />} />
+          <Route path="/location/:name" element={<LocationDetails />} />
+          <Route path="/alerts" element={<Alerts />} />
+        </Routes>
+      </Layout>
+    </BrowserRouter>
+  );
+};
 
-export default App
+export default App;
