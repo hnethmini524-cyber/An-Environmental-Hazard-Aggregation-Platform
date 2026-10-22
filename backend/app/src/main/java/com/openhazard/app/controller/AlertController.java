@@ -4,9 +4,11 @@ import com.openhazard.app.dto.AlertDTO;
 import com.openhazard.app.entities.Alert;
 import com.openhazard.app.repository.AlertRepository;
 import com.openhazard.app.service.SseAlertService;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -26,6 +28,7 @@ public class AlertController {
     }
 
     @GetMapping
+    @Transactional(readOnly = true)
     public ResponseEntity<List<AlertDTO>> getRecentAlerts() {
         List<Alert> recentAlerts = alertRepository.findTop50ByOrderByCreatedAtDesc();
         
