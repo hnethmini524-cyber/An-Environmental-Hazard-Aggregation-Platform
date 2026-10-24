@@ -17,8 +17,8 @@ public class LocationController {
     private final EnvironmentalService environmentalService;
 
     @GetMapping
-    public ResponseEntity<List<LocationOverviewDTO>> getAllLocationsOverview() {
-        return ResponseEntity.ok(environmentalService.getAllLocationsOverview());
+    public List<LocationOverviewDTO> getAllLocationsOverview() {
+    	return environmentalService.getAllLocationsOverview().getLocations();
     }
 
     @GetMapping("/{name}")

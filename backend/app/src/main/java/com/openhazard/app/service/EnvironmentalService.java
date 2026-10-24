@@ -22,8 +22,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -39,15 +41,15 @@ public class EnvironmentalService {
     private final SseAlertService sseAlertService;
 
     @Cacheable(value = "locations-overview")
-    public List<LocationOverviewDTO> getAllLocationsOverview() {
-        return locationRepository.findByIsActiveTrue().stream().map(location -> {
+    public LocationOverviewListResponse getAllLocationsOverview() {
+        List<LocationOverviewDTO> dtos = locationRepository.findByIsActiveTrue().stream().map(location -> {
             Optional<EnvironmentalRecord> latestOpt = recordRepository.findTopByLocationIdOrderByRecordedAtDesc(location.getId());
             
-            RiskLevel overall = latestOpt.map(r -> r.getOverallRisk()).orElse(RiskLevel.LOW);
-            RiskLevel heat = latestOpt.map(r -> r.getHeatRisk()).orElse(RiskLevel.LOW);
-            RiskLevel air = latestOpt.map(r -> r.getAirQualityRisk()).orElse(RiskLevel.LOW);
-            RiskLevel flood = latestOpt.map(r -> r.getFloodRisk()).orElse(RiskLevel.LOW);
-            Instant updatedAt = latestOpt.map(r -> r.getRecordedAt()).orElse(Instant.now());
+            RiskLevel overall = latestOpt.map(EnvironmentalRecord::getOverallRisk).orElse(RiskLevel.LOW);
+            RiskLevel heat = latestOpt.map(EnvironmentalRecord::getHeatRisk).orElse(RiskLevel.LOW);
+            RiskLevel air = latestOpt.map(EnvironmentalRecord::getAirQualityRisk).orElse(RiskLevel.LOW);
+            RiskLevel flood = latestOpt.map(EnvironmentalRecord::getFloodRisk).orElse(RiskLevel.LOW);
+            Instant updatedAt = latestOpt.map(EnvironmentalRecord::getRecordedAt).orElse(Instant.now());
 
             return LocationOverviewDTO.builder()
                     .id(location.getId())
@@ -61,7 +63,9 @@ public class EnvironmentalService {
                     .floodRisk(flood)
                     .updatedAt(updatedAt)
                     .build();
-        }).toList();
+        }).collect(Collectors.toCollection(ArrayList::new));
+
+        return new LocationOverviewListResponse(dtos);
     }
 
     public LocationDetailDTO getLocationDetails(String locationName) {
