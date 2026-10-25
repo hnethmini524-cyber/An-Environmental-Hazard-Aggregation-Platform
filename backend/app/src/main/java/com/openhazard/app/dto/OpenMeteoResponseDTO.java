@@ -10,6 +10,7 @@ public class OpenMeteoResponseDTO {
     private Double longitude;
     private CurrentUnits currentUnits;
     private CurrentData current;
+    private CurrentAirQuality currentAirQuality;
 
     @Data
     public static class CurrentUnits {
@@ -37,5 +38,14 @@ public class OpenMeteoResponseDTO {
         private Double relativeHumidity2m;
 
         private Double precipitation;
+    }
+    
+    @Data
+    public static class CurrentAirQuality {
+        @JsonProperty("us_aqi")
+        private Integer usAqi;
+
+        @JsonProperty("pm2_5")
+        private Double pm25;
     }
 }

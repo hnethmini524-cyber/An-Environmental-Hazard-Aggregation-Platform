@@ -23,17 +23,26 @@ public class OpenMeteoNormalizer {
         Double humidity = sanitizeDouble(current.getRelativeHumidity2m(), 0.0, 100.0);
         Double rain = sanitizeDouble(current.getPrecipitation(), 0.0, 500.0);
 
+        Integer aqi = null;
+        if (rawResponse.getCurrentAirQuality() != null && rawResponse.getCurrentAirQuality().getUsAqi() != null) {
+            int rawAqi = rawResponse.getCurrentAirQuality().getUsAqi();
+            if (rawAqi >= 0 && rawAqi <= 500) {
+                aqi = rawAqi;
+            }
+        }
+        
         return NormalizedEnvironmentData.builder()
                 .temperatureCelsius(temp)
                 .humidityPercentage(humidity)
                 .rainfallMmPerHour(rain)
+                .aqiValue(aqi)
                 .timestamp(Instant.now())
                 .build();
     }
 
     private Double sanitizeDouble(Double value, double minBoundary, double maxBoundary) {
         if (value == null || Double.isNaN(value) || value < minBoundary || value > maxBoundary) {
-            return null; // Treated as missing data gracefully by downstream risk engine
+            return null;
         }
         return value;
     }
