@@ -41,6 +41,10 @@ public class Location {
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
+    
+    @Column(name = "is_monitored", nullable = false)
+    @Builder.Default
+    private Boolean isMonitored = true;
 
     @PrePersist
     protected void onCreate() {

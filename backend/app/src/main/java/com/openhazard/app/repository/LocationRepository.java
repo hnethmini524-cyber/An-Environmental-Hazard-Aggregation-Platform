@@ -10,5 +10,6 @@ import java.util.Optional;
 @Repository
 public interface LocationRepository extends JpaRepository<Location, Long> {
     Optional<Location> findByNameIgnoreCase(String name);
-    List<Location> findByIsActiveTrue();
+    //List<Location> findByIsActiveTrue();
+    List<Location> findByIsActiveTrueAndIsMonitoredTrue();
 }

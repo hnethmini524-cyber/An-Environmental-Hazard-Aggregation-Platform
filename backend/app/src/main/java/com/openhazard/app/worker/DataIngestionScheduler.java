@@ -8,6 +8,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.context.event.EventListener;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
 
 import java.util.List;
 
@@ -21,10 +23,11 @@ public class DataIngestionScheduler {
     private final EnvironmentalService environmentalService;
 
     // Runs every 15 minutes (900,000 milliseconds)
+    @EventListener(ApplicationReadyEvent.class)
     @Scheduled(fixedRate = 900000)
     public void scheduleEnvironmentalDataIngestion() {
         log.info("Starting scheduled environmental data ingestion cycle...");
-        List<Location> activeLocations = locationRepository.findByIsActiveTrue();
+        List<Location> activeLocations = locationRepository.findByIsActiveTrueAndIsMonitoredTrue();
 
         for (Location location : activeLocations) {
             try {

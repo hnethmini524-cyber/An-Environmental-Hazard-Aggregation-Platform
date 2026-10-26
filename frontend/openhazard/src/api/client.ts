@@ -14,6 +14,13 @@ export const apiClient = {
     return response.data;
   },
 
+  exploreLocation: async (name: string, latitude: number, longitude: number): Promise<LocationDetail> => {
+    const response = await axios.get(`${API_BASE_URL}/locations/explore`, {
+      params: { name, latitude, longitude },
+    });
+    return response.data;
+  },
+
   getAlerts: async (): Promise<AlertItem[]> => {
     const response = await axios.get(`${API_BASE_URL}/alerts`);
     return response.data;

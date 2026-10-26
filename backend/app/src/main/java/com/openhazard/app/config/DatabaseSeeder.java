@@ -19,20 +19,47 @@ public class DatabaseSeeder implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        if (locationRepository.count() == 0) {
-            log.info("Seeding initial Sri Lankan locations into database...");
+        log.info("Checking and seeding monitored hubs...");
 
-            List<Location> locations = List.of(
-                    Location.builder().name("Colombo").district("Colombo").province("Western").latitude(new BigDecimal("6.9271")).longitude(new BigDecimal("79.8612")).build(),
-                    Location.builder().name("Kandy").district("Kandy").province("Central").latitude(new BigDecimal("7.2906")).longitude(new BigDecimal("80.6337")).build(),
-                    Location.builder().name("Galle").district("Galle").province("Southern").latitude(new BigDecimal("6.0535")).longitude(new BigDecimal("80.2210")).build(),
-                    Location.builder().name("Jaffna").district("Jaffna").province("Northern").latitude(new BigDecimal("9.6615")).longitude(new BigDecimal("80.0255")).build(),
-                    Location.builder().name("Trincomalee").district("Trincomalee").province("Eastern").latitude(new BigDecimal("8.5874")).longitude(new BigDecimal("81.2152")).build(),
-                    Location.builder().name("Negombo").district("Gampaha").province("Western").latitude(new BigDecimal("7.2008")).longitude(new BigDecimal("79.8737")).build()
-            );
+        List<Location> targetHubs = List.of(
+            createHub("Colombo", "Colombo", "Western", "6.9271", "79.8612"),
+            createHub("Kurunegala", "Kurunegala", "North Western", "7.4863", "80.3647"),
+            createHub("Anuradhapura", "Anuradhapura", "North Central", "8.3114", "80.4037"),
+            createHub("Kandy", "Kandy", "Central", "7.2906", "80.6337"),
+            createHub("Galle", "Galle", "Southern", "6.0535", "80.2210"),
+            createHub("Jaffna", "Jaffna", "Northern", "9.6615", "80.0255"),
+            createHub("Trincomalee", "Trincomalee", "Eastern", "8.5874", "81.2152"),
+            createHub("Negombo", "Gampaha", "Western", "7.2008", "79.8737"),
+            createHub("Nuwara Eliya", "Nuwara Eliya", "Central", "6.9497", "80.7891"),
+            createHub("Ratnapura", "Ratnapura", "Sabaragamuwa", "6.6828", "80.3992")
+        );
 
-            locationRepository.saveAll(locations);
-            log.info("Seeded {} locations successfully.", locations.size());
+        for (Location hub : targetHubs) {
+            locationRepository.findByNameIgnoreCase(hub.getName())
+                .ifPresentOrElse(
+                    existing -> {
+                        if (existing.getIsMonitored() == null || !existing.getIsMonitored() || !existing.getIsActive()) {
+                            existing.setIsMonitored(true);
+                            existing.setIsActive(true);
+                            locationRepository.save(existing);
+                        }
+                    },
+                    () -> locationRepository.save(hub)
+                );
         }
+
+        log.info("Monitored hubs initialization complete. Total active locations in DB: {}", locationRepository.count());
+    }
+
+    private Location createHub(String name, String district, String province, String lat, String lon) {
+        return Location.builder()
+                .name(name)
+                .district(district)
+                .province(province)
+                .latitude(new BigDecimal(lat))
+                .longitude(new BigDecimal(lon))
+                .isActive(true)
+                .isMonitored(true)
+                .build();
     }
 }

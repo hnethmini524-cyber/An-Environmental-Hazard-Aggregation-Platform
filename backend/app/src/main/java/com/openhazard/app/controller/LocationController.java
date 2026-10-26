@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 @RestController
@@ -18,11 +19,20 @@ public class LocationController {
 
     @GetMapping
     public List<LocationOverviewDTO> getAllLocationsOverview() {
-    	return environmentalService.getAllLocationsOverview().getLocations();
+        return environmentalService.getAllLocationsOverview().getLocations();
     }
 
     @GetMapping("/{name}")
     public ResponseEntity<LocationDetailDTO> getLocationDetails(@PathVariable String name) {
         return ResponseEntity.ok(environmentalService.getLocationDetails(name));
+    }
+    
+    @GetMapping("/explore")
+    public ResponseEntity<LocationDetailDTO> exploreLocation(
+            @RequestParam String name,
+            @RequestParam BigDecimal latitude,
+            @RequestParam BigDecimal longitude) {
+
+        return ResponseEntity.ok(environmentalService.exploreLocationOnDemand(name, latitude, longitude));
     }
 }

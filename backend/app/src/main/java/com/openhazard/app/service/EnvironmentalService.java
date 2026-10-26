@@ -20,6 +20,7 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -42,7 +43,7 @@ public class EnvironmentalService {
 
     @Cacheable(value = "locations-overview")
     public LocationOverviewListResponse getAllLocationsOverview() {
-        List<LocationOverviewDTO> dtos = locationRepository.findByIsActiveTrue().stream().map(location -> {
+        List<LocationOverviewDTO> dtos = locationRepository.findByIsActiveTrueAndIsMonitoredTrue().stream().map(location -> {
             Optional<EnvironmentalRecord> latestOpt = recordRepository.findTopByLocationIdOrderByRecordedAtDesc(location.getId());
             
             RiskLevel overall = latestOpt.map(EnvironmentalRecord::getOverallRisk).orElse(RiskLevel.LOW);
@@ -66,6 +67,39 @@ public class EnvironmentalService {
         }).collect(Collectors.toCollection(ArrayList::new));
 
         return new LocationOverviewListResponse(dtos);
+    }
+    
+    public LocationDetailDTO exploreLocationOnDemand(String name, BigDecimal latitude, BigDecimal longitude) {
+        // Fetch real-time weather directly from Open-Meteo without DB write
+        Optional<OpenMeteoResponseDTO> rawMeteo = openMeteoClient.fetchCurrentWeather(latitude, longitude);
+
+        NormalizedEnvironmentData normalized = rawMeteo
+                .map(normalizer::normalize)
+                .orElseGet(() -> NormalizedEnvironmentData.builder().timestamp(Instant.now()).build());
+
+        RiskAssessmentResult riskResult = riskEngine.evaluate(normalized);
+
+        EnvironmentalRecordDTO currentRecord = EnvironmentalRecordDTO.builder()
+                .temperatureCelsius(normalized.getTemperatureCelsius())
+                .humidityPercentage(normalized.getHumidityPercentage())
+                .aqiValue(normalized.getAqiValue())
+                .rainfallMmPerHour(normalized.getRainfallMmPerHour())
+                .riverLevelMeters(normalized.getRiverLevelMeters())
+                .heatRisk(riskResult.getHeatRisk())
+                .airQualityRisk(riskResult.getAirQualityRisk())
+                .floodRisk(riskResult.getFloodRisk())
+                .overallRisk(riskResult.getOverallRisk())
+                .recordedAt(normalized.getTimestamp())
+                .build();
+
+        return LocationDetailDTO.builder()
+                .name(name)
+                .district("Explored Area")
+                .latitude(latitude)
+                .longitude(longitude)
+                .currentRecord(currentRecord)
+                .history(List.of(currentRecord))
+                .build();
     }
 
     public LocationDetailDTO getLocationDetails(String locationName) {
