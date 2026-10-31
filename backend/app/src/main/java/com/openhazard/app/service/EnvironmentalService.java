@@ -130,7 +130,7 @@ public class EnvironmentalService {
 
         Optional<OpenMeteoResponseDTO> rawMeteo = openMeteoClient.fetchCurrentWeather(location.getLatitude(), location.getLongitude());
         NormalizedEnvironmentData normalized = rawMeteo
-                .map(raw -> normalizer.normalize(raw))
+                .map(normalizer::normalize)
                 .orElseGet(() -> NormalizedEnvironmentData.builder().timestamp(Instant.now()).build());
 
         RiskAssessmentResult riskResult = riskEngine.evaluate(normalized);
@@ -151,15 +151,48 @@ public class EnvironmentalService {
 
         recordRepository.save(record);
 
-        if (riskResult.getOverallRisk() == RiskLevel.HIGH || riskResult.getOverallRisk() == RiskLevel.CRITICAL) {
-            triggerAlert(location, HazardType.OVERALL, riskResult.getOverallRisk(), 
-                    "Elevated risk condition detected in " + location.getName());
+        // check Heat Risk
+        if (riskResult.getHeatRisk() == RiskLevel.HIGH || riskResult.getHeatRisk() == RiskLevel.CRITICAL) {
+            String msg = String.format("Elevated Heat Index detected in %s: %.1f°C with %d%% humidity.",
+                    location.getName(), normalized.getTemperatureCelsius(), normalized.getHumidityPercentage());
+            triggerAlert(location, HazardType.HEAT, riskResult.getHeatRisk(), msg);
+        }
+
+        // check Air Quality Risk
+        if (riskResult.getAirQualityRisk() == RiskLevel.HIGH || riskResult.getAirQualityRisk() == RiskLevel.CRITICAL) {
+            String msg = String.format("Poor Air Quality detected in %s: US AQI reached %d.",
+                    location.getName(), normalized.getAqiValue());
+            triggerAlert(location, HazardType.AIR_QUALITY, riskResult.getAirQualityRisk(), msg);
+        }
+
+        // check Flood / Precipitation Risk
+        if (riskResult.getFloodRisk() == RiskLevel.HIGH || riskResult.getFloodRisk() == RiskLevel.CRITICAL) {
+            String msg = String.format("Heavy Rainfall detected in %s: %.1f mm/hr precipitation.",
+                    location.getName(), normalized.getRainfallMmPerHour());
+            triggerAlert(location, HazardType.FLOOD, riskResult.getFloodRisk(), msg);
+        }
+
+        // overall Compound Risk Fallback
+        if (riskResult.getOverallRisk() == RiskLevel.CRITICAL &&
+            riskResult.getHeatRisk() != RiskLevel.CRITICAL &&
+            riskResult.getAirQualityRisk() != RiskLevel.CRITICAL &&
+            riskResult.getFloodRisk() != RiskLevel.CRITICAL) {
+
+            String msg = String.format("Compounding environmental hazards detected in %s.", location.getName());
+            triggerAlert(location, HazardType.OVERALL, riskResult.getOverallRisk(), msg);
         }
 
         return record;
     }
 
     private void triggerAlert(Location location, HazardType hazardType, RiskLevel severity, String message) {
+        Instant oneHourAgo = Instant.now().minus(1, ChronoUnit.HOURS);
+        
+        // Avoid firing identical alerts repeatedly within a 1-hour window
+        if (alertRepository.existsByLocationIdAndHazardTypeAndCreatedAtAfter(location.getId(), hazardType, oneHourAgo)) {
+            return;
+        }
+
         Alert alert = Alert.builder()
                 .location(location)
                 .hazardType(hazardType)
