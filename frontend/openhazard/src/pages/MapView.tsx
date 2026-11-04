@@ -170,7 +170,7 @@ export const MapView: React.FC = () => {
                     <RiskBadge level={loc.overallRisk} />
                   </div>
                   <Link
-                    to={`/location/${loc.name}`}
+                    to={`/location/${encodeURIComponent(loc.name)}`}
                     className="inline-block mt-2 text-xs text-emerald-600 font-bold hover:underline"
                   >
                     View Detailed Risk Dashboard &rarr;
@@ -203,6 +203,14 @@ export const MapView: React.FC = () => {
                       <RiskBadge level={exploredLocation.currentRecord.overallRisk} />
                     )}
                   </div>
+
+                  {/* Dashboard link for searched locations using query parameters */}
+                  <Link
+                    to={`/location/${encodeURIComponent(exploredLocation.name)}?lat=${exploredLocation.latitude}&lon=${exploredLocation.longitude}`}
+                    className="inline-block mt-2 text-xs text-emerald-600 font-bold hover:underline"
+                  >
+                    View Detailed Risk Dashboard &rarr;
+                  </Link>
                 </div>
               </Popup>
             </Marker>

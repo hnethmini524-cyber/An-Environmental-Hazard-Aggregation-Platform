@@ -35,6 +35,7 @@ export interface LocationDetail {
   longitude: number;
   currentRecord: EnvironmentalRecord;
   history: EnvironmentalRecord[];
+  aiAdvisory?: SafetyAdvisory;
 }
 
 export interface AlertItem {
@@ -45,3 +46,10 @@ export interface AlertItem {
   message: string;
   createdAt: string;
 }
+
+export interface SafetyAdvisory {
+  locationName: string;
+  summaryHeadline: string;
+  keyActionSteps: string[];
+}
+

@@ -16,4 +16,5 @@ public class LocationDetailDTO {
     private BigDecimal longitude;
     private EnvironmentalRecordDTO currentRecord;
     private List<EnvironmentalRecordDTO> history;
+    private SafetyAdvisoryDTO aiAdvisory;
 }

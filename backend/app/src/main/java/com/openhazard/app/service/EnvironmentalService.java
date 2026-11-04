@@ -40,6 +40,7 @@ public class EnvironmentalService {
     private final OpenMeteoNormalizer normalizer;
     private final EnvironmentalRiskEngine riskEngine;
     private final SseAlertService sseAlertService;
+    private final AdvisoryService advisoryService;
 
     @Cacheable(value = "locations-overview")
     public LocationOverviewListResponse getAllLocationsOverview() {
@@ -112,6 +113,9 @@ public class EnvironmentalService {
         Instant last24Hours = Instant.now().minus(24, ChronoUnit.HOURS);
         List<EnvironmentalRecord> history = recordRepository.findHistoricalTrends(location.getId(), last24Hours);
 
+        EnvironmentalRecordDTO recordDTO = mapToRecordDTO(latest);
+        
+        SafetyAdvisoryDTO aiAdvisory = advisoryService.generateAdvisory(location.getName(), recordDTO);
         return LocationDetailDTO.builder()
                 .id(location.getId())
                 .name(location.getName())
@@ -120,6 +124,7 @@ public class EnvironmentalService {
                 .longitude(location.getLongitude())
                 .currentRecord(mapToRecordDTO(latest))
                 .history(history.stream().map(this::mapToRecordDTO).toList())
+                .aiAdvisory(aiAdvisory)
                 .build();
     }
 

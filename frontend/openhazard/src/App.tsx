@@ -5,6 +5,7 @@ import { Home } from './pages/Home';
 import { MapView } from './pages/MapView';
 import { LocationDetails } from './pages/LocationDetails';
 import { Alerts } from './pages/Alerts';
+import { DataSources } from './pages/DataSources';
 
 export const App: React.FC = () => {
   return (
@@ -15,6 +16,7 @@ export const App: React.FC = () => {
           <Route path="/map" element={<MapView />} />
           <Route path="/location/:name" element={<LocationDetails />} />
           <Route path="/alerts" element={<Alerts />} />
+          <Route path="/about" element={<DataSources />} />
         </Routes>
       </Layout>
     </BrowserRouter>
