@@ -22,20 +22,21 @@ public class DataIngestionScheduler {
     private final LocationRepository locationRepository;
     private final EnvironmentalService environmentalService;
 
-    // Runs every 15 minutes (900,000 milliseconds)
-    @EventListener(ApplicationReadyEvent.class)
+    // Runs scheduled ingestion every 15 minutes
     @Scheduled(fixedRate = 900000)
     public void scheduleEnvironmentalDataIngestion() {
         log.info("Starting scheduled environmental data ingestion cycle...");
         List<Location> activeLocations = locationRepository.findByIsActiveTrueAndIsMonitoredTrue();
 
-        for (Location location : activeLocations) {
+        // Parallelized stream processing to prevent external API timeouts from blocking ingestion
+        activeLocations.parallelStream().forEach(location -> {
             try {
                 environmentalService.fetchAndIngestLocationData(location);
             } catch (Exception e) {
                 log.error("Failed ingestion cycle for location: {}. Cause: {}", location.getName(), e.getMessage());
             }
-        }
+        });
+
         log.info("Ingestion cycle complete for {} locations.", activeLocations.size());
     }
 }

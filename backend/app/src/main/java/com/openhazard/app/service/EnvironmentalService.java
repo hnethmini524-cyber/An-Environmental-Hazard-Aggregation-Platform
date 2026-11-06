@@ -1,18 +1,12 @@
 package com.openhazard.app.service;
 
 import com.openhazard.app.dto.*;
-import com.openhazard.app.entities.Alert;
 import com.openhazard.app.entities.EnvironmentalRecord;
 import com.openhazard.app.entities.Location;
-import com.openhazard.app.enums.HazardType;
 import com.openhazard.app.enums.RiskLevel;
 import com.openhazard.app.integration.OpenMeteoClient;
-import com.openhazard.app.repository.AlertRepository;
 import com.openhazard.app.repository.EnvironmentalRecordRepository;
 import com.openhazard.app.repository.LocationRepository;
-import com.openhazard.app.service.EnvironmentalRiskEngine;
-import com.openhazard.app.service.OpenMeteoNormalizer;
-import com.openhazard.app.service.SseAlertService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
@@ -23,9 +17,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -35,23 +28,25 @@ public class EnvironmentalService {
 
     private final LocationRepository locationRepository;
     private final EnvironmentalRecordRepository recordRepository;
-    private final AlertRepository alertRepository;
     private final OpenMeteoClient openMeteoClient;
     private final OpenMeteoNormalizer normalizer;
     private final EnvironmentalRiskEngine riskEngine;
-    private final SseAlertService sseAlertService;
+    private final AlertEvaluationService alertEvaluationService;
     private final AdvisoryService advisoryService;
 
     @Cacheable(value = "locations-overview")
+    @Transactional(readOnly = true)
     public LocationOverviewListResponse getAllLocationsOverview() {
-        List<LocationOverviewDTO> dtos = locationRepository.findByIsActiveTrueAndIsMonitoredTrue().stream().map(location -> {
-            Optional<EnvironmentalRecord> latestOpt = recordRepository.findTopByLocationIdOrderByRecordedAtDesc(location.getId());
-            
-            RiskLevel overall = latestOpt.map(EnvironmentalRecord::getOverallRisk).orElse(RiskLevel.LOW);
-            RiskLevel heat = latestOpt.map(EnvironmentalRecord::getHeatRisk).orElse(RiskLevel.LOW);
-            RiskLevel air = latestOpt.map(EnvironmentalRecord::getAirQualityRisk).orElse(RiskLevel.LOW);
-            RiskLevel flood = latestOpt.map(EnvironmentalRecord::getFloodRisk).orElse(RiskLevel.LOW);
-            Instant updatedAt = latestOpt.map(EnvironmentalRecord::getRecordedAt).orElse(Instant.now());
+        List<Location> monitoredLocations = locationRepository.findByIsActiveTrueAndIsMonitoredTrue();
+        List<Long> locationIds = monitoredLocations.stream().map(Location::getId).toList();
+
+        // Optimized single DB call for all latest records (Solves N+1 Query Problem)
+        Map<Long, EnvironmentalRecord> latestRecordMap = recordRepository.findLatestRecordsForLocations(locationIds)
+                .stream()
+                .collect(Collectors.toMap(r -> r.getLocation().getId(), Function.identity()));
+
+        List<LocationOverviewDTO> dtos = monitoredLocations.stream().map(location -> {
+            EnvironmentalRecord latest = latestRecordMap.get(location.getId());
 
             return LocationOverviewDTO.builder()
                     .id(location.getId())
@@ -59,19 +54,18 @@ public class EnvironmentalService {
                     .district(location.getDistrict())
                     .latitude(location.getLatitude())
                     .longitude(location.getLongitude())
-                    .overallRisk(overall)
-                    .heatRisk(heat)
-                    .airQualityRisk(air)
-                    .floodRisk(flood)
-                    .updatedAt(updatedAt)
+                    .overallRisk(latest != null ? latest.getOverallRisk() : RiskLevel.LOW)
+                    .heatRisk(latest != null ? latest.getHeatRisk() : RiskLevel.LOW)
+                    .airQualityRisk(latest != null ? latest.getAirQualityRisk() : RiskLevel.LOW)
+                    .floodRisk(latest != null ? latest.getFloodRisk() : RiskLevel.LOW)
+                    .updatedAt(latest != null ? latest.getRecordedAt() : Instant.now())
                     .build();
-        }).collect(Collectors.toCollection(ArrayList::new));
+        }).toList();
 
         return new LocationOverviewListResponse(dtos);
     }
-    
+
     public LocationDetailDTO exploreLocationOnDemand(String name, BigDecimal latitude, BigDecimal longitude) {
-        // Fetch real-time weather directly from Open-Meteo without DB write
         Optional<OpenMeteoResponseDTO> rawMeteo = openMeteoClient.fetchCurrentWeather(latitude, longitude);
 
         NormalizedEnvironmentData normalized = rawMeteo
@@ -80,18 +74,8 @@ public class EnvironmentalService {
 
         RiskAssessmentResult riskResult = riskEngine.evaluate(normalized);
 
-        EnvironmentalRecordDTO currentRecord = EnvironmentalRecordDTO.builder()
-                .temperatureCelsius(normalized.getTemperatureCelsius())
-                .humidityPercentage(normalized.getHumidityPercentage())
-                .aqiValue(normalized.getAqiValue())
-                .rainfallMmPerHour(normalized.getRainfallMmPerHour())
-                .riverLevelMeters(normalized.getRiverLevelMeters())
-                .heatRisk(riskResult.getHeatRisk())
-                .airQualityRisk(riskResult.getAirQualityRisk())
-                .floodRisk(riskResult.getFloodRisk())
-                .overallRisk(riskResult.getOverallRisk())
-                .recordedAt(normalized.getTimestamp())
-                .build();
+        EnvironmentalRecordDTO currentRecord = mapNormalizedToRecordDTO(normalized, riskResult);
+        SafetyAdvisoryDTO aiAdvisory = advisoryService.generateAdvisory(name, currentRecord);
 
         return LocationDetailDTO.builder()
                 .name(name)
@@ -100,9 +84,11 @@ public class EnvironmentalService {
                 .longitude(longitude)
                 .currentRecord(currentRecord)
                 .history(List.of(currentRecord))
+                .aiAdvisory(aiAdvisory)
                 .build();
     }
 
+    @Transactional(readOnly = true)
     public LocationDetailDTO getLocationDetails(String locationName) {
         Location location = locationRepository.findByNameIgnoreCase(locationName)
                 .orElseThrow(() -> new IllegalArgumentException("Location not found: " + locationName));
@@ -114,15 +100,15 @@ public class EnvironmentalService {
         List<EnvironmentalRecord> history = recordRepository.findHistoricalTrends(location.getId(), last24Hours);
 
         EnvironmentalRecordDTO recordDTO = mapToRecordDTO(latest);
-        
         SafetyAdvisoryDTO aiAdvisory = advisoryService.generateAdvisory(location.getName(), recordDTO);
+
         return LocationDetailDTO.builder()
                 .id(location.getId())
                 .name(location.getName())
                 .district(location.getDistrict())
                 .latitude(location.getLatitude())
                 .longitude(location.getLongitude())
-                .currentRecord(mapToRecordDTO(latest))
+                .currentRecord(recordDTO)
                 .history(history.stream().map(this::mapToRecordDTO).toList())
                 .aiAdvisory(aiAdvisory)
                 .build();
@@ -156,67 +142,10 @@ public class EnvironmentalService {
 
         recordRepository.save(record);
 
-        // check Heat Risk
-        if (riskResult.getHeatRisk() == RiskLevel.HIGH || riskResult.getHeatRisk() == RiskLevel.CRITICAL) {
-            String msg = String.format("Elevated Heat Index detected in %s: %.1f°C with %d%% humidity.",
-                    location.getName(), normalized.getTemperatureCelsius(), normalized.getHumidityPercentage());
-            triggerAlert(location, HazardType.HEAT, riskResult.getHeatRisk(), msg);
-        }
-
-        // check Air Quality Risk
-        if (riskResult.getAirQualityRisk() == RiskLevel.HIGH || riskResult.getAirQualityRisk() == RiskLevel.CRITICAL) {
-            String msg = String.format("Poor Air Quality detected in %s: US AQI reached %d.",
-                    location.getName(), normalized.getAqiValue());
-            triggerAlert(location, HazardType.AIR_QUALITY, riskResult.getAirQualityRisk(), msg);
-        }
-
-        // check Flood / Precipitation Risk
-        if (riskResult.getFloodRisk() == RiskLevel.HIGH || riskResult.getFloodRisk() == RiskLevel.CRITICAL) {
-            String msg = String.format("Heavy Rainfall detected in %s: %.1f mm/hr precipitation.",
-                    location.getName(), normalized.getRainfallMmPerHour());
-            triggerAlert(location, HazardType.FLOOD, riskResult.getFloodRisk(), msg);
-        }
-
-        // overall Compound Risk Fallback
-        if (riskResult.getOverallRisk() == RiskLevel.CRITICAL &&
-            riskResult.getHeatRisk() != RiskLevel.CRITICAL &&
-            riskResult.getAirQualityRisk() != RiskLevel.CRITICAL &&
-            riskResult.getFloodRisk() != RiskLevel.CRITICAL) {
-
-            String msg = String.format("Compounding environmental hazards detected in %s.", location.getName());
-            triggerAlert(location, HazardType.OVERALL, riskResult.getOverallRisk(), msg);
-        }
+        // Delegate alert evaluations
+        alertEvaluationService.processHazardAlerts(location, normalized, riskResult);
 
         return record;
-    }
-
-    private void triggerAlert(Location location, HazardType hazardType, RiskLevel severity, String message) {
-        Instant oneHourAgo = Instant.now().minus(1, ChronoUnit.HOURS);
-        
-        // Avoid firing identical alerts repeatedly within a 1-hour window
-        if (alertRepository.existsByLocationIdAndHazardTypeAndCreatedAtAfter(location.getId(), hazardType, oneHourAgo)) {
-            return;
-        }
-
-        Alert alert = Alert.builder()
-                .location(location)
-                .hazardType(hazardType)
-                .severity(severity)
-                .message(message)
-                .build();
-
-        alertRepository.save(alert);
-
-        AlertDTO alertDTO = AlertDTO.builder()
-                .id(alert.getId())
-                .locationName(location.getName())
-                .hazardType(hazardType)
-                .severity(severity)
-                .message(message)
-                .createdAt(alert.getCreatedAt())
-                .build();
-
-        sseAlertService.broadcastAlert(alertDTO);
     }
 
     private EnvironmentalRecordDTO mapToRecordDTO(EnvironmentalRecord record) {
@@ -231,6 +160,21 @@ public class EnvironmentalService {
                 .floodRisk(record.getFloodRisk())
                 .overallRisk(record.getOverallRisk())
                 .recordedAt(record.getRecordedAt())
+                .build();
+    }
+
+    private EnvironmentalRecordDTO mapNormalizedToRecordDTO(NormalizedEnvironmentData data, RiskAssessmentResult risk) {
+        return EnvironmentalRecordDTO.builder()
+                .temperatureCelsius(data.getTemperatureCelsius())
+                .humidityPercentage(data.getHumidityPercentage())
+                .aqiValue(data.getAqiValue())
+                .rainfallMmPerHour(data.getRainfallMmPerHour())
+                .riverLevelMeters(data.getRiverLevelMeters())
+                .heatRisk(risk.getHeatRisk())
+                .airQualityRisk(risk.getAirQualityRisk())
+                .floodRisk(risk.getFloodRisk())
+                .overallRisk(risk.getOverallRisk())
+                .recordedAt(data.getTimestamp())
                 .build();
     }
 }

@@ -16,7 +16,7 @@ public class SseAlertService {
     private final List<SseEmitter> emitters = new CopyOnWriteArrayList<>();
 
     public SseEmitter subscribe() {
-        SseEmitter emitter = new SseEmitter(60_000L * 30); // 30-minute timeout
+        SseEmitter emitter = new SseEmitter(1800_000L); // 30-minute timeout
 
         emitters.add(emitter);
 
@@ -30,7 +30,6 @@ public class SseAlertService {
             this.emitters.remove(emitter);
         });
 
-        // Send connection acknowledgment event
         try {
             emitter.send(SseEmitter.event()
                     .name("INIT")
@@ -43,18 +42,16 @@ public class SseAlertService {
     }
 
     public void broadcastAlert(AlertDTO alert) {
-        List<SseEmitter> deadEmitters = new CopyOnWriteArrayList<>();
-
-        for (SseEmitter emitter : emitters) {
+        emitters.removeIf(emitter -> {
             try {
                 emitter.send(SseEmitter.event()
                         .name("HAZARD_ALERT")
                         .data(alert));
+                return false;
             } catch (Exception ex) {
-                deadEmitters.add(emitter);
+                log.debug("Removing disconnected SSE emitter: {}", ex.getMessage());
+                return true;
             }
-        }
-
-        this.emitters.removeAll(deadEmitters);
+        });
     }
 }
